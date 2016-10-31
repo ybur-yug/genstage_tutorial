@@ -939,8 +939,3 @@ UPDATE "tasks" AS t0 SET "status" = $1 WHERE (t0."id" = ANY($2)) ["success", [5]
 ```
 
 It works and we are storing and running tasks!
-
-## TODO publish to hex
-
-[Here](https://github.com/ybur-yug/genstage_example/tree/87c5f96c74e8fa90cd5b5fd108cd9ba104f78a65) is a link to all code thus far.
-
