@@ -24,13 +24,13 @@ $ cd genstage_example
 Let's set up some basic things for the future of our application.
 Since GenStage is generally used as a transformation pipeline, lets imagine we have a background worker of some sort.
 This worker will need to persist whatever it changes, so we should get a database set up, but we can worry about that in a later lesson.
-To start, all we need to do is add `gen_stage` to our deps.
+To start, all we need to do is add `gen_stage` to our deps in `mix.deps`.
 
 ```elixir
 . . .
   defp deps do
     [
-      {:gen_stage, "~> 0.7},
+      {:gen_stage, "~> 0.7"},
     ]
   end
 . . .
