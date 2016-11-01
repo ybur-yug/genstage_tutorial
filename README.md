@@ -71,7 +71,10 @@ defmodule GenstageExample.Producer do
   end
 
   def handle_demand(demand, state) do
+                    # the default demand is 1000
     events = Enum.to_list(state..state + demand - 1)
+             # [0 .. 999]
+             # is a filled list, so its going to be considered emitting true events immediately
     {:noreply, events, (state + demand)}
   end
 end
