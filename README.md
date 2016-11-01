@@ -703,7 +703,7 @@ The message here is arbitrary, but I chose this atom to make the meaning clear.
 
 Last, but not least we do some simple delegation:
 
-```
+```elixir
 . . .
   defdelegate enqueue(module, functions, args), to : Producer
 . . .
@@ -853,6 +853,18 @@ Let's define `yield_to_status/2` for each of the scenarios we mentioned:
 ```
 These simple handle the atom being returned from the process and respond appropriately.
 If it takes more than a second, we need to shut it down because otherwise it would just hang forever.
+
+If we make another method to update the database after consumption, we are set to go:
+
+```elixir
+. . .
+  defp update(status, id) do
+    GenstageExample.TaskDBInterface.update_task_status(id, status)
+  end
+. . .
+```
+
+And here we just call it through our database interface and update the status after yielding to allow the task time to run.
 
 From this, we can see our finalized consumer:
 
