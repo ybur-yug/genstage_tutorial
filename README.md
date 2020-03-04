@@ -643,18 +643,6 @@ This is what we will end up with:
     opts = [strategy: :one_for_one, name: GenstageExample.Supervisor]
     Supervisor.start_link(children, opts)
   end
-
-  def start_later(list) do
-    GenstageExample.Task.enqueue(list)
-    notify_producer()
-  end
-
-  def start_later(module, function, args) do
-    GenstageExample.Task.enqueue({module, function, args})
-    notify_producer()
-  end
-
-  defdelegate notify_producer(), to: Producer
 . . .
 ```
 
@@ -693,39 +681,41 @@ This new supervisor is run through `Task.Supervisor`, which is built into Elixir
 We give it a name so it is easily referred to in our GenStage code, `GenstageExample.TaskSupervisor`.
 Now, we define our children as the concatenation of all these lists.
 
-Next, we have `start_later/3`:
+
+`/lib/genserver_example.ex` will be used as a public interface to the application.
+It inserts tasks into database, and notifies Producer of change.
 
 ```elixir
-. . .
+defmodule GenstageExample do
   def start_later(list) do
     GenstageExample.Task.enqueue(list)
-    notify_producer()
+    GenstageExample.Producer.notify_producer()
   end
 
   def start_later(module, function, args) do
     GenstageExample.Task.enqueue({module, function, args})
-    notify_producer()
+    GenstageExample.Producer.notify_producer()
   end
-
-  defdelegate notify_producer(), to: Producer
 . . .
 ```
-We then insert the task as `waiting`, and notify a producer that a task has been inserted to run.
-`defdelegate notify_producer()` means method in Producer module will be invoked.
 
-`notify_producer/0` in /lib/producer.ex:
+`notify_producer/0` in `/lib/genstage_example/producer.ex`
+This method is quite simple.
+We cast our producer a message, `:data_inserted`, simply so that it knows what we did.
+The message here is arbitrary, but I chose this atom to make the meaning clear.
 
 ```elixir
 . . .
   def notify_producer do
     GenStage.cast(@name, :data_inserted)
   end
+
+  def handle_cast(:data_inserted, state) do
+    serve_jobs(state)
+  end
 . . .
 ```
 
-This method is quite simple.
-We cast our producer a message, `:data_inserted`, simply so that it knows what we did.
-The message here is arbitrary, but I chose this atom to make the meaning clear.
 
 ### Producer Setup
 Our producer doesn't need a ton of work.
@@ -910,7 +900,7 @@ defmodule GenstageExample.Consumer do
 end
 ```
 
-### How to run it
+## How to run it
 
 #### Manually add tasks:
 
@@ -946,5 +936,5 @@ It works and we are storing and running tasks!
 
 ```elixir
 $ iex -S mix
-iex> GenstageExample.Runner.run()
+iex> GenstageExample.auto_start_later()
 ```

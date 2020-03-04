@@ -19,7 +19,7 @@ defmodule GenstageExample.Mixfile do
   def application do
     [
       extra_applications: [:logger],
-      mod: {GenstageExample, []}
+      mod: {GenstageExample.Application, []}
     ]
   end
 
