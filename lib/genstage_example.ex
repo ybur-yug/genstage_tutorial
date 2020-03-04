@@ -1,38 +1,23 @@
 defmodule GenstageExample do
-  use Application
-
-  alias GenstageExample.{Producer, Repo}
-  def start(_type, _args) do
-    import Supervisor.Spec, warn: false
-                          # 12 workers / system core
-    consumers = for id <- (0..System.schedulers_online * 12) do
-                  worker(GenstageExample.Consumer, [], id: id)
-                end
-    producers = [
-                 worker(Producer, []),
-                ]
-
-    supervisors = [
-                    supervisor(GenstageExample.Repo, []),
-                    supervisor(Task.Supervisor, [[name: GenstageExample.TaskSupervisor]]),
-                  ]
-    children = supervisors ++ producers ++ consumers
-
-    opts = [strategy: :one_for_one, name: GenstageExample.Supervisor]
-    Supervisor.start_link(children, opts)
+  def start_later(list) do
+    GenstageExample.Task.enqueue(list)
+    GenstageExample.Producer.notify_producer()
   end
 
   def start_later(module, function, args) do
-    payload = {module, function, args} |> :erlang.term_to_binary
-    Repo.insert_all("tasks", [
-                              %{status: "waiting", payload: payload}
-                             ])
-    notify_producer
+    GenstageExample.Task.enqueue({module, function, args})
+    GenstageExample.Producer.notify_producer()
   end
 
-  def notify_producer do
-    send(Producer, :data_inserted)
+  def auto_start_later do
+    0..2000
+    |> Enum.map(fn i ->
+      {__MODULE__, :do_work, [i]}
+    end)
+    |> start_later()
   end
 
-  defdelegate enqueue(module, function, args), to: Producer
+  def do_work(i) do
+    IO.puts("Running :do_work(#{inspect(i)}) in PID #{inspect(self())}")
+  end
 end

@@ -30,7 +30,7 @@ To start, all we need to do is add `gen_stage` to our deps in `mix.deps`.
 . . .
   defp deps do
     [
-      {:gen_stage, "~> 0.7"},
+      {:gen_stage, "~> 1.0"},
     ]
   end
 . . .
@@ -58,10 +58,9 @@ Now we can add the code:
 
 ```elixir
 defmodule GenstageExample.Producer do
-  alias Experimental.GenStage
   use GenStage
 
-  def start_link do
+  def start_link(_) do
     GenStage.start_link(__MODULE__, 0, name: __MODULE__)
                                        # naming allows us to handle failure
   end
@@ -86,14 +85,11 @@ To begin with, we have our initial declarations:
 ```elixir
 . . .
 defmodule GenstageExample.Producer do
-  alias Experimental.GenStage
   use GenStage
 . . .
 ```
 
 What this does is a couple simple things.
-First, we declare our module, and soon after we alias `Experimental.GenStage`.
-This is simply because we will be calling it more than once and makes it more convenient.
 The `use GenStage` line is much akin to `use GenServer`.
 This line allows us to import the default behaviour and functions to save us from a large amount of boilerplate.
 
@@ -101,8 +97,8 @@ If we go further, we see the first two primary functions for startup:
 
 ```elixir
 . . .
-  def start_link do
-    GenStage.start_link(__MODULE__, :the_state_doesnt_matter)
+  def start_link(_) do
+    GenStage.start_link(__MODULE__, :the_state_doesnt_matter, name: __MODULE__)
   end
 
   def init(counter) do
@@ -112,8 +108,8 @@ If we go further, we see the first two primary functions for startup:
 ```
 
 These two functions offer a very simple start.
-First, we have our standard `start_link/0` function.
-Inside here, we use`GenStage.start_link/` beginning with our argument `__MODULE__`, which will give it the name of our current module.
+First, we have our standard `start_link/1` function.
+Inside here, we use`GenStage.start_link/3` passing current `__MODULE__` as a first argument.
 Next, we set a state, which is arbitrary in this case, and can be any value.
 The `__MODULE__` argument is used for name registration like any other module.
 The second argument is the arguments, which in this case are meaningless as we do not care about it.
@@ -141,10 +137,9 @@ We'll start by showing all the code and then break it down.
 
 ```elixir
 defmodule GenstageExample.Consumer do
-  alias Experimental.GenStage
   use GenStage
 
-  def start_link do
+  def start_link(_) do
     GenStage.start_link(__MODULE__, :state_doesnt_matter)
   end
 
@@ -165,10 +160,9 @@ To start, let's look at the beginning functions just like last time:
 
 ```elixir
 defmodule GenstageExample.Consumer do
-  alias Experimental.GenStage
   use GenStage
 
-  def start_link do
+  def start_link(_) do
     GenStage.start_link(__MODULE__, :state_doesnt_matter)
   end
 
@@ -178,8 +172,8 @@ defmodule GenstageExample.Consumer do
 . . .
 ```
 
-To begin, much like in our producer, we set up our `start_link/0` and `init/1` functions.
-In `start_link` we simple register the module name like last time, and set a state.
+To begin, much like in our producer, we set up our `start_link/1` and `init/1` functions.
+In `start_link/1` we simple register the module name like last time, and set a state.
 The state is arbitrary for the consumer, and can be literally whatever we please, in this case `:state_doesnt_matter`.
 
 In `init/1` we simply take the state and set up our expected tuple.
@@ -208,13 +202,13 @@ After that, we don't reply because we are a consumer and do not handle anything,
 
 ## Wiring It Together
 To get all of this to work we only have to make one simple change.
-Open up `lib/genstage_example.ex` and we can add them as workers and they will automatically start with our application:
+Open up `lib/genstage_example/application.ex` and we can add them as workers and they will automatically start with our application:
 
 ```elixir
 . . .
     children = [
-      worker(GenstageExample.Producer, []),
-      worker(GenstageExample.Consumer, []),
+      {GenstageExample.Producer, []},
+      {GenstageExample.Consumer, []}
     ]
 . . .
 ```
@@ -245,14 +239,14 @@ Now, what if we wanted multiple consumers?
 Right now, if we examine the `IO.inspect/1` output, we see that every single event is handled by a single PID.
 This isn't very Elixir-y.
 We have massive concurrency built-in, we should probably leverage that as much as possible.
-Let's make some adjustments so that we can have multiple workers by modifying `lib/genstage_example.ex`
+Let's make some adjustments so that we can have multiple workers by modifying `lib/genstage_example/application.ex`
 
 ```elixir
 . . .
     children = [
-      worker(GenstageExample.Producer, []),
-      worker(GenstageExample.Consumer, [], id: 1),
-      worker(GenstageExample.Consumer, [], id: 2),
+      {GenstageExample.Producer, []},
+      Supervisor.child_spec({GenstageExample.Consumer, []}, id: 1),
+      Supervisor.child_spec({GenstageExample.Consumer, []}, id: 2)
     ]
 . . .
 ```
@@ -274,11 +268,11 @@ But we can take this even further:
 ```elixir
 . . .
     children = [
-      worker(GenstageExample.Producer, []),
+       {GenstageExample.Producer, []},
     ]
     consumers = for id <- 1..(System.schedulers_online * 12) do
                               # helper to get the number of cores on machine
-                  worker(GenstageExample.Consumer, [], id: id)
+                  Supervisor.child_spec({GenstageExample.Consumer, []}, id: id)
                 end
 
     opts = [strategy: :one_for_one, name: GenstageExample.Supervisor]
@@ -357,9 +351,9 @@ To get started let's add it and the Postgresql adapter to `mix.exs`:
 . . .
   defp deps do
     [
-     {:gen_stage, "~> 0.7"},
-     {:ecto, "~> 2.0"},
-     {:postgrex, "~> 0.12.1"},
+      {:ecto_sql, "~> 3.0"},
+      {:postgrex, "~> 0.15.3"},
+      {:gen_stage, "~> 1.0"},
     ]
   end
 . . .
@@ -372,32 +366,20 @@ Fetch the dependencies and compile:
 $ mix do deps.get, compile
 ```
 
-And now we can add a repo for setup in `lib/repo.ex`:
-
-```elixir
-defmodule GenstageExample.Repo do
-  use Ecto.Repo,
-    otp_app: :genstage_example
-end
+```shell
+$ mix ecto.gen.repo GenstageExample.Repo
 ```
+This command will:
+- create lib/repo.ex
+- update config/config.exs
 
-and with this we can set up our config next in `config/config.exs`:
+Add this line to `config/config.exs`:
 
 ```elixir
-use Mix.Config
-
 config :genstage_example, ecto_repos: [GenstageExample.Repo]
-
-config :genstage_example, GenstageExample.Repo,
-  adapter: Ecto.Adapters.Postgres,
-  database: "genstage_example",
-  username: "your_username",
-  password: "your_password",
-  hostname: "localhost",
-  port: "5432"
 ```
 
-And if we add a supservisor to `lib/genstage_example.ex` we can now start working with the DB:
+Add Repo to Supervision tree of Application:
 
 ```elixir
 . . .
@@ -405,26 +387,31 @@ And if we add a supservisor to `lib/genstage_example.ex` we can now start workin
     import Supervisor.Spec, warn: false
 
     children = [
-      supervisor(GenstageExample.Repo, []),
-      worker(GenstageExample.Producer, []),
+      {Repo, []},
+      {GenstageExample.Producer, []},
     ]
   end
-. . .
-```
-
-But we should also make an interface to do that, so let's import our query interface and repo to the producer:
-
-```elixir
-. . .
-  import Ecto.Query
-  import GenstageExample.Repo
 . . .
 ```
 
 Now we need to create our migration:
 
 ```shell
-$ mix ecto.gen.migration setup_tasks status:text payload:binary
+$ mix ecto.gen.migration setup_tasks
+```
+
+Inside a migration (`/priv/_...setup_tasks.exs`), add:
+```elixir
+. . .
+  def change do
+    create table(:tasks) do
+      add :payload, :binary, null: false
+      add :status, :string, default: "waiting", null: false
+
+      timestamps(updated_at: false, inserted_at: false)
+    end
+  end
+. . .
 ```
 
 Now that we have a functional database, we can start storing things.
@@ -447,8 +434,12 @@ To start, let's create our `Task` module to model our actual tasks to be run:
 
 ```elixir
 defmodule GenstageExample.Task do
-  def enqueue(status, payload) do
-    GenstageExample.TaskDBInterface.insert_tasks(status, payload)
+  def enqueue(list) when is_list(list) do
+    GenstageExample.TaskDBInterface.insert_tasks(list)
+  end
+
+  def enqueue(payload) do
+    GenstageExample.TaskDBInterface.insert_tasks([payload])
   end
 
   def take(limit) do
@@ -462,7 +453,7 @@ We only have 2 functions.
 Now, the module they are calling doesn't exist yet, it gives us the ideas we need to build a very simple interface. 
 These can be broken down as follows:
 
-1. `enqueue/2` - Enqueue a task to be run
+1. `enqueue/1` - Enqueue a task to be run
 3. `take/1` - Take a given number of tasks to run from the database
 
 Now this gives us the interface we need: we can set things to be run, and grab tasks to be run and we can define the rest of the interface.
@@ -471,36 +462,55 @@ Let's create an interface with our database in its own module:
 ```elixir
 defmodule GenstageExample.TaskDBInterface do
   import Ecto.Query
+  alias GenstageExample.Repo
 
   def take_tasks(limit) do
     {:ok, {count, events}} =
-      GenstageExample.Repo.transaction fn ->
-        ids = GenstageExample.Repo.all waiting(limit)
-        GenstageExample.Repo.update_all by_ids(ids), [set: [status: "running"]], [returning: [:id, :payload]]
-      end
+      GenstageExample.Repo.transaction(fn ->
+        ids = GenstageExample.Repo.all(waiting(limit))
+
+        GenstageExample.Repo.update_all(by_ids(ids), set: [status: "running"])
+      end)
+
     {count, events}
   end
 
-  def insert_tasks(status, payload) do
-    GenstageExample.Repo.insert_all "tasks", [
-      %{status: status, payload: payload}
-    ]
+  def insert_tasks(list) do
+    tasks =
+      list
+      |> Enum.map(fn payload = {_m, _f, _a} ->
+        payload = construct_payload(payload)
+        %{status: "waiting", payload: payload}
+      end)
+
+    Repo.insert_all("tasks", tasks)
   end
 
   def update_task_status(id, status) do
-    GenstageExample.Repo.update_all by_ids([id]), set: [status: status]
+    Repo.update_all(by_ids([id]), set: [status: status])
   end
 
   defp by_ids(ids) do
-    from t in "tasks", where: t.id in ^ids
+    from(t in "tasks",
+      where: t.id in ^ids,
+      select: %{
+        id: t.id,
+        payload: t.payload
+      }
+    )
   end
 
   defp waiting(limit) do
-    from t in "tasks",
+    from(t in "tasks",
       where: t.status == "waiting",
       limit: ^limit,
       select: t.id,
       lock: "FOR UPDATE SKIP LOCKED"
+    )
+  end
+
+  defp construct_payload(mfa = {module, function, args}) do
+    :erlang.term_to_binary(mfa)
   end
 end
 ```
@@ -521,10 +531,12 @@ Let's look at the code:
 . . .
   def take_tasks(limit) do
     {:ok, {count, events}} =
-      GenstageExample.Repo.transaction fn ->
-        ids = GenstageExample.Repo.all waiting(limit)
-        GenstageExample.Repo.update_all by_ids(ids), [set: [status: "running"]], [returning: [:id, :payload]]
-      end
+      GenstageExample.Repo.transaction(fn ->
+        ids = GenstageExample.Repo.all(waiting(limit))
+
+        GenstageExample.Repo.update_all(by_ids(ids), set: [status: "running"])
+      end)
+
     {count, events}
   end
 . . .
@@ -540,10 +552,13 @@ Next we have `insert_tasks/2`:
 
 ```elixir
 . . .
-  def insert_tasks(status, payload) do
-    GenstageExample.Repo.insert_all "tasks", [
-      %{status: status, payload: payload}
-    ]
+  def insert_tasks(list) do
+    Repo.insert_all(
+      "tasks",
+      Enum.map(list, fn payload = {_m, _f, _a} ->
+        %{status: "waiting", payload: construct_payload(payload)}
+      end)
+    )
   end
 . . .
 ```
@@ -556,7 +571,7 @@ Finally, we have `update_task_status/2`, which is also quite simple:
 ```elixir
 . . .
   def update_task_status(id, status) do
-    GenstageExample.Repo.update_all by_ids([id]), set: [status: status]
+    Repo.update_all(by_ids([id]), set: [status: status])
   end
 . . .
 ```
@@ -569,15 +584,22 @@ Our helpers are all called primarily inside of `take_tasks/1`, but also used els
 ```elixir
 . . .
   defp by_ids(ids) do
-    from t in "tasks", where: t.id in ^ids
+    from(t in "tasks",
+      where: t.id in ^ids,
+      select: %{
+        id: t.id,
+        payload: t.payload
+      }
+    )
   end
 
   defp waiting(limit) do
-    from t in "tasks",
+    from(t in "tasks",
       where: t.status == "waiting",
       limit: ^limit,
       select: t.id,
       lock: "FOR UPDATE SKIP LOCKED"
+    )
   end
 . . .
 ```
@@ -595,44 +617,32 @@ Now that we have our DB interface defined as it is used in the primary API, we c
 ### Producer, Consumer, and Final Configuration
 
 #### Final Config
-We will need to do a bit of configuration in `lib/genstage_example.ex` to clarify things as well as give us the final functionalities we will need to run jobs.
+We will need to do a bit of configuration in `lib/genstage_example/application.ex` to clarify things as well as give us the final functionalities we will need to run jobs.
 This is what we will end up with:
 
 ```elixir
 . . .
   def start(_type, _args) do
-    import Supervisor.Spec, warn: false
-                          # 12 workers / system core
-    consumers = for id <- (0..System.schedulers_online * 12) do
-                  worker(GenstageExample.Consumer, [], id: id)
-                end
+    # 12 workers / system core
+    consumers =
+      for id <- 0..(System.schedulers_online() * 12) do
+        Supervisor.child_spec({Consumer, []}, id: id)
+      end
+
     producers = [
-                 worker(Producer, []),
-                ]
+      {Producer, []}
+    ]
 
     supervisors = [
-                    supervisor(GenstageExample.Repo, []),
-                    supervisor(Task.Supervisor, [[name: GenstageExample.TaskSupervisor]]),
-                  ]
+      {Repo, []},
+      {Task.Supervisor, name: GenstageExample.TaskSupervisor}
+    ]
+
     children = supervisors ++ producers ++ consumers
 
     opts = [strategy: :one_for_one, name: GenstageExample.Supervisor]
     Supervisor.start_link(children, opts)
   end
-
-  def start_later(module, function, args) do
-    payload = {module, function, args} |> :erlang.term_to_binary
-    Repo.insert_all("tasks", [
-                              %{status: "waiting", payload: payload}
-                             ])
-    notify_producer
-  end
-
-  def notify_producer do
-    send(Producer, :data_inserted)
-  end
-
-  defdelegate enqueue(module, function, args), to: Producer
 . . .
 ```
 
@@ -642,19 +652,20 @@ First, `start/2`:
 ```elixir
 . . .
   def start(_type, _args) do
-    import Supervisor.Spec, warn: false
-                          # 12 workers / system core
-    consumers = for id <- (0..System.schedulers_online * 12) do
-                  worker(GenstageExample.Consumer, [], id: id)
-                end
+    consumers =
+      for id <- 0..(System.schedulers_online() * 12) do
+        Supervisor.child_spec({Consumer, []}, id: id)
+      end
+
     producers = [
-                 worker(Producer, []),
-                ]
+      {Producer, []}
+    ]
 
     supervisors = [
-                    supervisor(GenstageExample.Repo, []),
-                    supervisor(Task.Supervisor, [[name: GenstageExample.TaskSupervisor]]),
-                  ]
+      {Repo, []},
+      {Task.Supervisor, name: GenstageExample.TaskSupervisor}
+    ]
+
     children = supervisors ++ producers ++ consumers
 
     opts = [strategy: :one_for_one, name: GenstageExample.Supervisor]
@@ -670,45 +681,41 @@ This new supervisor is run through `Task.Supervisor`, which is built into Elixir
 We give it a name so it is easily referred to in our GenStage code, `GenstageExample.TaskSupervisor`.
 Now, we define our children as the concatenation of all these lists.
 
-Next, we have `start_later/3`:
+
+`/lib/genserver_example.ex` will be used as a public interface to the application.
+It inserts tasks into database, and notifies Producer of change.
 
 ```elixir
-. . .
+defmodule GenstageExample do
+  def start_later(list) do
+    GenstageExample.Task.enqueue(list)
+    GenstageExample.Producer.notify_producer()
+  end
+
   def start_later(module, function, args) do
-    payload = {module, function, args} |> :erlang.term_to_binary
-    Repo.insert_all("tasks", [
-                              %{status: "waiting", payload: payload}
-                             ])
-    notify_producer
+    GenstageExample.Task.enqueue({module, function, args})
+    GenstageExample.Producer.notify_producer()
   end
 . . .
 ```
-This function takes a module, a function, and an argument.
-It then encodes them as a binary using some built-in erlang magic.
-From here, we then insert the task as `waiting`, and we notify a producer that a task has been inserted to run.
 
-Now let's check out `notify_producer/0`:
+`notify_producer/0` in `/lib/genstage_example/producer.ex`
+This method is quite simple.
+We cast our producer a message, `:data_inserted`, simply so that it knows what we did.
+The message here is arbitrary, but I chose this atom to make the meaning clear.
 
 ```elixir
 . . .
   def notify_producer do
-    send(Producer, :data_inserted)
+    GenStage.cast(@name, :data_inserted)
+  end
+
+  def handle_cast(:data_inserted, state) do
+    serve_jobs(state)
   end
 . . .
 ```
 
-This method is quite simple.
-We send our producer a message, `:data_inserted`, simply so that it knows what we did.
-The message here is arbitrary, but I chose this atom to make the meaning clear.
-
-Last, but not least we do some simple delegation:
-
-```elixir
-. . .
-  defdelegate enqueue(module, functions, args), to : Producer
-. . .
-```
-This simply makes it so if we call `GenstageExample.enqueue(module, function, args)` that it will be delegated to the same method in our producer.
 
 ### Producer Setup
 Our producer doesn't need a ton of work.
@@ -716,22 +723,8 @@ first, we'll alter our `handle_demand/2` to actually do something with our event
 
 ```elixir
 . . .
-  def handle_demand(demand, state) when demand > 0 do
+  def handle_demand(demand, state) do
     serve_jobs(demand + state)
-  end
-. . .
-```
-
-We haven't defined `serve_jobs/2` yet, but we'll get there.
-The concept is simple, when we get a demand and demand is > 0, we do some work to the tune of demand + the current state's number of jobs.
-
-Now that we will be sending a message to the producer when we run `start_later/3`, we will want to respond to it with a `handle_info/2` call:
-
-```elixir
-. . .
-  def handle_info(:enqueued, state) do
-    {count, events} = GenstageExample.Task.take(state)
-    {:noreply, events, state - count}
   end
 . . .
 ```
@@ -742,34 +735,14 @@ Now let's define `serve_jobs/1`:
 
 ```elixir
 . . .
-  def serve_jobs limit do
+  def serve_jobs(limit) do
     {count, events} = GenstageExample.Task.take(limit)
-    Process.send_after(@name, :enqueued, 60_000)
     {:noreply, events, limit - count}
   end
 . . .
 ```
 
-Now, we are sending a process in one minute that to our producer telling it that it should respond to `:enqueued`.
-Note that we call the process module with `@name`, which we will need to add at the top as a module attribute:
-
-```elixir
-. . .
-  @name __MODULE__
-. . .
-```
-
-Let's define that last function to handle the `:enqueued` message now, too:
-
-```elixir
-. . .
-  def handle_cast(:enqueued, state) do
-    serve_jobs(state)
-  end
-. . .
-```
-
-This will simply serve jobs when we tell the producer they have `state` number of enqueued and to respond.
+`serve_jobs/1` will be invoked 
 
 ## Setting Up the Consumer for Real Work
 Our consumer is where we do the work.
@@ -787,6 +760,7 @@ The core of the consumer is `handle_events/3`, lets flesh out the functionality 
       task = start_task(module, function, args)
       yield_to_and_update_task(task, id)
     end
+
     {:noreply, [], state}
   end
 . . .
@@ -870,11 +844,10 @@ From this, we can see our finalized consumer:
 
 ```elixir
 defmodule GenstageExample.Consumer do
-  alias Experimental.GenStage
   use GenStage
-  alias GenstageExample.{Producer, TaskSupervisor}
+  alias GenstageExample.{Producer}
 
-  def start_link do
+  def start_link(_) do
     GenStage.start_link(__MODULE__, :state_doesnt_matter)
   end
 
@@ -889,18 +862,12 @@ defmodule GenstageExample.Consumer do
       task = start_task(module, function, args)
       yield_to_and_update_task(task, id)
     end
+
     {:noreply, [], state}
   end
 
-  defp yield_to_and_update_task(task, id) do
-    task
-    |> Task.yield(1000)
-    |> yield_to_status(task)
-    |> update(id)
-  end
-
   defp start_task(mod, func, args) do
-    Task.Supervisor.async_nolink(TaskSupervisor, mod  , func, args)
+    Task.Supervisor.async_nolink(GenstageExample.TaskSupervisor, mod, func, args)
   end
 
   defp yield_to_status({:ok, _}, _) do
@@ -920,17 +887,27 @@ defmodule GenstageExample.Consumer do
     GenstageExample.TaskDBInterface.update_task_status(id, status)
   end
 
-  defp deconstruct_payload payload do
-    payload |> :erlang.binary_to_term
+  defp yield_to_and_update_task(task, id) do
+    task
+    |> Task.yield(1000)
+    |> yield_to_status(task)
+    |> update(id)
+  end
+
+  defp deconstruct_payload(payload) do
+    payload |> :erlang.binary_to_term()
   end
 end
 ```
 
-Now, if we go into IEx:
+## How to run it
+
+#### Manually add tasks:
 
 ```elixir
 $ iex -S mix
-iex> GenstageExample.enqueue(IO, :puts, ["wuddup"])
+iex> GenstageExample.start_later(IO, :puts, ["wuddup"])
+
 #=> 
 16:39:31.014 [debug] QUERY OK db=137.4ms
 INSERT INTO "tasks" ("payload","status") VALUES ($1,$2) [<<131, 104, 3, 100, 0, 9, 69, 108, 105, 120, 105, 114, 46, 73, 79, 100, 0, 4, 112, 117, 116, 115, 108, 0, 0, 0, 1, 109, 0, 0, 0, 6, 119, 117, 100, 100, 117, 112, 106>>, "waiting"]
@@ -954,3 +931,10 @@ UPDATE "tasks" AS t0 SET "status" = $1 WHERE (t0."id" = ANY($2)) ["success", [5]
 ```
 
 It works and we are storing and running tasks!
+
+#### Or just add 2000 tasks automatically:
+
+```elixir
+$ iex -S mix
+iex> GenstageExample.auto_start_later()
+```

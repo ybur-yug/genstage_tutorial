@@ -1,9 +1,8 @@
 defmodule GenstageExample.Consumer do
-  alias Experimental.GenStage
   use GenStage
-  alias GenstageExample.{Producer, TaskSupervisor}
+  alias GenstageExample.{Producer}
 
-  def start_link do
+  def start_link(_) do
     GenStage.start_link(__MODULE__, :state_doesnt_matter)
   end
 
@@ -18,11 +17,12 @@ defmodule GenstageExample.Consumer do
       task = start_task(module, function, args)
       yield_to_and_update_task(task, id)
     end
+
     {:noreply, [], state}
   end
 
   defp start_task(mod, func, args) do
-    Task.Supervisor.async_nolink(TaskSupervisor, mod  , func, args)
+    Task.Supervisor.async_nolink(GenstageExample.TaskSupervisor, mod, func, args)
   end
 
   defp yield_to_status({:ok, _}, _) do
@@ -49,7 +49,7 @@ defmodule GenstageExample.Consumer do
     |> update(id)
   end
 
-  defp deconstruct_payload payload do
-    payload |> :erlang.binary_to_term
+  defp deconstruct_payload(payload) do
+    payload |> :erlang.binary_to_term()
   end
 end

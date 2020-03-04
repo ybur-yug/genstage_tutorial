@@ -3,8 +3,10 @@ defmodule GenstageExample.Repo.Migrations.AddTasks do
 
   def change do
     create table(:tasks) do
-      add :payload, :binary
-      add :status, :string
+      add :payload, :binary, null: false
+      add :status, :string, default: "waiting", null: false
+
+      timestamps(updated_at: false, inserted_at: false)
     end
   end
 end
