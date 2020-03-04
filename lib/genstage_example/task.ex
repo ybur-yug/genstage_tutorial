@@ -1,6 +1,10 @@
 defmodule GenstageExample.Task do
-  def enqueue(status, payload) do
-    GenstageExample.TaskDBInterface.insert_tasks(status, payload)
+  def enqueue(list) when is_list(list) do
+    GenstageExample.TaskDBInterface.insert_tasks(list)
+  end
+
+  def enqueue(payload) do
+    GenstageExample.TaskDBInterface.insert_tasks([payload])
   end
 
   def take(limit) do
