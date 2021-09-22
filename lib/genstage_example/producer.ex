@@ -2,6 +2,7 @@ defmodule GenstageExample.Producer do
   alias Experimental.GenStage
   use GenStage
 
+
   @name __MODULE__
 
   def start_link do
